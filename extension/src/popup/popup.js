@@ -39,6 +39,7 @@ const elements = {
     queueCompleted: document.getElementById('queueCompleted'),
     queueList: document.getElementById('queueList'),
     clearQueueBtn: document.getElementById('clearQueueBtn'),
+    appVersion: document.getElementById('appVersion'),
 };
 
 let isLiveTranslating = false;
@@ -51,6 +52,33 @@ const TIER_HINTS_KEYS = {
     tier3: 'tierHint3',
     tier4: 'tierHint4',
 };
+
+// Backend connectivity states, mirrored to [data-state] so the styling lives in CSS
+const BACKEND_STATE = {
+    CHECKING: 'checking',
+    ONLINE: 'online',
+    OFFLINE: 'offline',
+};
+
+const DEFAULT_BACKEND_URL = 'http://localhost:5001';
+const DEFAULT_TTS_RATE = 1;
+const DEFAULT_TTS_VOLUME = 0.8;
+const HEALTH_TIMEOUT_MS = 15000; // generous, RunPod workers can cold start
+const QUEUE_REFRESH_MS = 3000;
+const SAVE_FEEDBACK_MS = 2000;
+const CACHE_FEEDBACK_MS = 1500;
+const QUEUE_STATUSES = ['pending', 'processing', 'completed', 'failed'];
+const LIVE_ICON = { INACTIVE: '🎙️', ACTIVE: '⏹️' };
+
+// Locale-aware formatters (undefined locale = browser/OS locale)
+const numberFormat = new Intl.NumberFormat(undefined);
+const rateFormat = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const percentFormat = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 0 });
+
+/** Speech rate is shown as a multiplier, e.g. "1.2x" */
+function formatRate(value) {
+    return `${rateFormat.format(value)}x`;
+}
 
 /**
  * Wake up the service worker and wait for it to respond
@@ -95,6 +123,7 @@ async function init() {
 
     // Localize page first (no async, instant)
     localizePage();
+    showVersion();
 
     // Wake up the service worker BEFORE any other operations
     await wakeUpServiceWorker();
@@ -117,11 +146,12 @@ async function init() {
     setupEventListeners();
 
     // Refresh queue periodically
-    setInterval(loadQueue, 3000);
+    setInterval(loadQueue, QUEUE_REFRESH_MS);
 }
 
 /**
- * Localize all elements with data-i18n attribute
+ * Localize all elements with data-i18n attributes.
+ * `data-i18n` sets the text, `data-i18n-title` / `data-i18n-aria-label` the matching attribute.
  */
 function localizePage() {
     document.querySelectorAll('[data-i18n]').forEach(element => {
@@ -133,21 +163,43 @@ function localizePage() {
             element.textContent = message;
         }
     });
+
+    const I18N_ATTRIBUTES = { 'data-i18n-title': 'title', 'data-i18n-aria-label': 'aria-label' };
+    Object.entries(I18N_ATTRIBUTES).forEach(([dataAttribute, targetAttribute]) => {
+        document.querySelectorAll(`[${dataAttribute}]`).forEach(element => {
+            const message = chrome.i18n.getMessage(element.getAttribute(dataAttribute));
+            if (message) element.setAttribute(targetAttribute, message);
+        });
+    });
+}
+
+/**
+ * Show the version from the manifest so the footer can never go stale
+ */
+function showVersion() {
+    if (!elements.appVersion) return;
+    const { version } = chrome.runtime.getManifest();
+    elements.appVersion.textContent = `v${version}`;
+}
+
+/**
+ * Reflect backend connectivity on the badge (dot colour comes from CSS)
+ */
+function setBackendState(state, messageKey) {
+    elements.backendStatusBadge.dataset.state = state;
+    const statusText = elements.backendStatusBadge.querySelector('.status-text');
+    statusText.textContent = chrome.i18n.getMessage(messageKey);
+    elements.backendWarning.style.display = state === BACKEND_STATE.OFFLINE ? 'flex' : 'none';
 }
 
 /**
  * Check Backend Status
  */
 async function checkBackendStatus() {
-    const statusText = elements.backendStatusBadge.querySelector('.status-text');
-    const statusDot = elements.backendStatusBadge.querySelector('.status-dot');
+    setBackendState(BACKEND_STATE.CHECKING, 'statusChecking');
+    elements.checkBackend.disabled = true;
 
-    statusText.textContent = chrome.i18n.getMessage('statusChecking');
-    statusDot.style.background = 'var(--text-muted)';
-    statusDot.style.boxShadow = 'none';
-    elements.backendWarning.style.display = 'none';
-
-    let backendUrl = elements.backendUrl?.value?.trim() || 'http://localhost:5001';
+    let backendUrl = elements.backendUrl?.value?.trim() || DEFAULT_BACKEND_URL;
     // Remove trailing slash for consistency
     backendUrl = backendUrl.replace(/\/+$/, '');
 
@@ -159,10 +211,8 @@ async function checkBackendStatus() {
         }
     } catch (urlError) {
         console.warn('[Subtide] Invalid backend URL:', backendUrl);
-        statusText.textContent = chrome.i18n.getMessage('statusOffline');
-        statusDot.style.background = 'var(--error)';
-        statusDot.style.boxShadow = '0 0 8px var(--error)';
-        elements.backendWarning.style.display = 'flex';
+        setBackendState(BACKEND_STATE.OFFLINE, 'statusOffline');
+        elements.checkBackend.disabled = false;
         return;
     }
 
@@ -179,7 +229,7 @@ async function checkBackendStatus() {
         const response = await fetch(`${backendUrl}/health`, {
             method: 'GET',
             headers: headers,
-            signal: AbortSignal.timeout(15000) // 15s timeout for cold starts
+            signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS)
         });
 
         console.log('[Subtide] Health response:', response.status);
@@ -192,21 +242,16 @@ async function checkBackendStatus() {
             // Flask: { "status": "ok" }
             // RunPod Serverless: { "jobs": {...}, "workers": {...} }
             if (data.status === 'ok' || data.workers !== undefined || data.jobs !== undefined) {
-                statusText.textContent = chrome.i18n.getMessage('statusConnected');
-                statusDot.style.background = 'var(--success)';
-                statusDot.style.boxShadow = '0 0 8px var(--success)';
-                elements.backendWarning.style.display = 'none';
+                setBackendState(BACKEND_STATE.ONLINE, 'statusConnected');
                 return;
             }
         }
         throw new Error(`HTTP ${response.status}`);
     } catch (e) {
         console.warn("[Subtide] Backend check failed:", e);
-
-        statusText.textContent = chrome.i18n.getMessage('statusOffline');
-        statusDot.style.background = 'var(--error)';
-        statusDot.style.boxShadow = '0 0 8px var(--error)';
-        elements.backendWarning.style.display = 'flex';
+        setBackendState(BACKEND_STATE.OFFLINE, 'statusOffline');
+    } finally {
+        elements.checkBackend.disabled = false;
     }
 }
 
@@ -224,19 +269,21 @@ async function loadConfig() {
         elements.forceGen.checked = config.forceGen || false;
         elements.defaultLanguage.value = config.defaultLanguage || 'en';
         elements.tier.value = config.tier || 'tier1';
-        elements.backendUrl.value = config.backendUrl || 'http://localhost:5001';
+        elements.backendUrl.value = config.backendUrl || DEFAULT_BACKEND_URL;
         elements.backendApiKey.value = config.backendApiKey || '';
 
         // Load TTS settings
         if (elements.ttsEnabled) elements.ttsEnabled.checked = config.ttsEnabled || false;
         if (elements.ttsSource) elements.ttsSource.value = config.ttsSource || 'auto';
         if (elements.ttsRate) {
-            elements.ttsRate.value = config.ttsRate || 1;
-            if (elements.ttsRateValue) elements.ttsRateValue.textContent = (config.ttsRate || 1).toFixed(1) + 'x';
+            const rate = config.ttsRate || DEFAULT_TTS_RATE;
+            elements.ttsRate.value = rate;
+            if (elements.ttsRateValue) elements.ttsRateValue.textContent = formatRate(rate);
         }
         if (elements.ttsVolume) {
-            elements.ttsVolume.value = config.ttsVolume || 0.8;
-            if (elements.ttsVolumeValue) elements.ttsVolumeValue.textContent = Math.round((config.ttsVolume || 0.8) * 100) + '%';
+            const volume = config.ttsVolume || DEFAULT_TTS_VOLUME;
+            elements.ttsVolume.value = volume;
+            if (elements.ttsVolumeValue) elements.ttsVolumeValue.textContent = percentFormat.format(volume);
         }
 
         // Apply tier-based UI
@@ -258,7 +305,7 @@ async function loadCacheStats() {
         let msg = '';
         if (count === 0) msg = chrome.i18n.getMessage('cacheCountZero');
         else if (count === 1) msg = chrome.i18n.getMessage('cacheCountOne');
-        else msg = chrome.i18n.getMessage('cacheCountSome', [count.toString()]);
+        else msg = chrome.i18n.getMessage('cacheCountSome', [numberFormat.format(count)]);
         elements.cacheCount.textContent = msg;
     } catch (error) {
         console.error('[Subtide] Failed to load cache stats:', error);
@@ -330,7 +377,7 @@ function setupEventListeners() {
         elements.ttsRate.addEventListener('input', (e) => {
             const value = parseFloat(e.target.value);
             if (elements.ttsRateValue) {
-                elements.ttsRateValue.textContent = value.toFixed(1) + 'x';
+                elements.ttsRateValue.textContent = formatRate(value);
             }
         });
     }
@@ -340,7 +387,7 @@ function setupEventListeners() {
         elements.ttsVolume.addEventListener('input', (e) => {
             const value = parseFloat(e.target.value);
             if (elements.ttsVolumeValue) {
-                elements.ttsVolumeValue.textContent = Math.round(value * 100) + '%';
+                elements.ttsVolumeValue.textContent = percentFormat.format(value);
             }
         });
     }
@@ -413,9 +460,9 @@ async function loadQueue() {
         const processing = queue.filter(i => i.status === 'processing').length;
         const completed = queue.filter(i => i.status === 'completed' || i.status === 'failed').length;
 
-        elements.queuePending.textContent = `${pending} pending`;
-        elements.queueProcessing.textContent = `${processing} processing`;
-        elements.queueCompleted.textContent = `${completed} done`;
+        elements.queuePending.textContent = chrome.i18n.getMessage('queuePendingCount', [numberFormat.format(pending)]);
+        elements.queueProcessing.textContent = chrome.i18n.getMessage('queueProcessingCount', [numberFormat.format(processing)]);
+        elements.queueCompleted.textContent = chrome.i18n.getMessage('queueCompletedCount', [numberFormat.format(completed)]);
 
         // Render list using safe DOM APIs to prevent XSS
         elements.queueList.textContent = ''; // Clear existing content
@@ -423,7 +470,7 @@ async function loadQueue() {
         if (queue.length === 0) {
             const emptyDiv = document.createElement('div');
             emptyDiv.className = 'queue-empty';
-            emptyDiv.textContent = 'No videos in queue';
+            emptyDiv.textContent = chrome.i18n.getMessage('queueEmpty');
             elements.queueList.appendChild(emptyDiv);
         } else {
             queue.forEach(item => {
@@ -433,9 +480,9 @@ async function loadQueue() {
 
                 const statusDiv = document.createElement('div');
                 // Validate status to prevent class injection
-                const safeStatus = ['pending', 'processing', 'completed', 'failed'].includes(item.status)
-                    ? item.status : 'pending';
+                const safeStatus = QUEUE_STATUSES.includes(item.status) ? item.status : 'pending';
                 statusDiv.className = `queue-item-status ${safeStatus}`;
+                statusDiv.setAttribute('aria-hidden', 'true');
 
                 const titleDiv = document.createElement('div');
                 titleDiv.className = 'queue-item-title';
@@ -443,10 +490,13 @@ async function loadQueue() {
                 titleDiv.textContent = item.title || '';
 
                 const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
                 removeBtn.className = 'queue-item-remove';
                 removeBtn.dataset.id = item.id;
-                removeBtn.title = 'Remove';
-                removeBtn.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+                const removeLabel = chrome.i18n.getMessage('queueRemoveItem');
+                removeBtn.title = removeLabel;
+                removeBtn.setAttribute('aria-label', removeLabel);
+                removeBtn.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>';
 
                 removeBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
@@ -484,21 +534,22 @@ function updateLiveButtonState(state) {
 
     if (state === 'loading') {
         btn.disabled = true;
-        text.textContent = '...';
-    } else if (state === 'active') {
-        btn.disabled = false;
-        btn.classList.add('btn-danger'); // Add a red style class if you have one, or inline style
-        btn.style.backgroundColor = '#ef4444';
-        btn.style.color = 'white';
-        icon.textContent = '⏹️';
+        btn.setAttribute('aria-busy', 'true');
+        text.textContent = chrome.i18n.getMessage('loading');
+        return;
+    }
+
+    btn.disabled = false;
+    btn.removeAttribute('aria-busy');
+
+    if (state === 'active') {
+        btn.classList.add('btn-danger');
+        icon.textContent = LIVE_ICON.ACTIVE;
         text.textContent = chrome.i18n.getMessage('btnStopLiveTranslate');
     } else {
-        btn.disabled = false;
         btn.classList.remove('btn-danger');
-        btn.style.backgroundColor = '';
-        btn.style.color = '';
-        icon.textContent = '🎙️';
-        text.textContent = chrome.i18n.getMessage('startLiveTranslate');
+        icon.textContent = LIVE_ICON.INACTIVE;
+        text.textContent = chrome.i18n.getMessage('btnStartLiveTranslate');
     }
 }
 
@@ -550,12 +601,12 @@ function updateUIForTier(tier) {
             // Free tier: No force gen
             elements.forceGen.checked = false;
             elements.forceGen.disabled = true;
-            elements.forceGenGroup.style.opacity = '0.5';
+            elements.forceGenGroup.classList.add('is-locked');
             elements.forceGenGroup.title = chrome.i18n.getMessage('reqTier2');
         } else {
             // Basic tier
             elements.forceGen.disabled = false;
-            elements.forceGenGroup.style.opacity = '1';
+            elements.forceGenGroup.classList.remove('is-locked');
             elements.forceGenGroup.title = '';
         }
     }
@@ -573,6 +624,7 @@ async function saveConfiguration() {
     btnText.style.display = 'none';
     btnSaving.style.display = 'inline';
     elements.saveConfig.disabled = true;
+    elements.saveConfig.setAttribute('aria-busy', 'true');
 
     try {
         const config = {
@@ -583,13 +635,13 @@ async function saveConfiguration() {
             forceGen: elements.forceGen.checked,
             defaultLanguage: elements.defaultLanguage.value,
             tier: elements.tier.value,
-            backendUrl: elements.backendUrl.value.trim() || 'http://localhost:5001',
+            backendUrl: elements.backendUrl.value.trim() || DEFAULT_BACKEND_URL,
             backendApiKey: elements.backendApiKey.value.trim(),
             // TTS settings
             ttsEnabled: elements.ttsEnabled?.checked || false,
             ttsSource: elements.ttsSource?.value || 'auto',
-            ttsRate: parseFloat(elements.ttsRate?.value) || 1,
-            ttsVolume: parseFloat(elements.ttsVolume?.value) || 0.8,
+            ttsRate: parseFloat(elements.ttsRate?.value) || DEFAULT_TTS_RATE,
+            ttsVolume: parseFloat(elements.ttsVolume?.value) || DEFAULT_TTS_VOLUME,
         };
 
         await sendMessage({ action: 'saveConfig', config });
@@ -599,11 +651,13 @@ async function saveConfiguration() {
         btnSaved.style.display = 'inline';
 
         // Reset after delay
+        elements.saveConfig.removeAttribute('aria-busy');
+
         setTimeout(() => {
             btnSaved.style.display = 'none';
             btnText.style.display = 'inline';
             elements.saveConfig.disabled = false;
-        }, 2000);
+        }, SAVE_FEEDBACK_MS);
 
     } catch (error) {
         console.error('[Subtide] Failed to save config:', error);
@@ -611,10 +665,11 @@ async function saveConfiguration() {
         btnText.textContent = chrome.i18n.getMessage('saveError');
         btnText.style.display = 'inline';
         elements.saveConfig.disabled = false;
+        elements.saveConfig.removeAttribute('aria-busy');
 
         setTimeout(() => {
             btnText.textContent = chrome.i18n.getMessage('saveConfig');
-        }, 2000);
+        }, SAVE_FEEDBACK_MS);
     }
 }
 
@@ -624,7 +679,7 @@ async function saveConfiguration() {
 async function clearCache() {
     const btnText = elements.clearCache.querySelector('.btn-text');
     try {
-        btnText.textContent = '...';
+        btnText.textContent = chrome.i18n.getMessage('loading');
         elements.clearCache.disabled = true;
 
         await sendMessage({ action: 'clearCache' });
@@ -636,7 +691,7 @@ async function clearCache() {
         setTimeout(() => {
             btnText.textContent = chrome.i18n.getMessage('clear');
             elements.clearCache.disabled = false;
-        }, 1500);
+        }, CACHE_FEEDBACK_MS);
 
     } catch (error) {
         console.error('[Subtide] Failed to clear cache:', error);
@@ -645,7 +700,7 @@ async function clearCache() {
         setTimeout(() => {
             btnText.textContent = chrome.i18n.getMessage('clear');
             elements.clearCache.disabled = false;
-        }, 1500);
+        }, CACHE_FEEDBACK_MS);
     }
 }
 

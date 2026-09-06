@@ -281,7 +281,7 @@ async function loadConfig() {
             if (elements.ttsRateValue) elements.ttsRateValue.textContent = formatRate(rate);
         }
         if (elements.ttsVolume) {
-            const volume = config.ttsVolume || DEFAULT_TTS_VOLUME;
+            const volume = config.ttsVolume ?? DEFAULT_TTS_VOLUME;
             elements.ttsVolume.value = volume;
             if (elements.ttsVolumeValue) elements.ttsVolumeValue.textContent = percentFormat.format(volume);
         }

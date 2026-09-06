@@ -33,6 +33,28 @@ else:
 @pytest.mark.skipif(platform.system() != 'Darwin', reason="MLX is only available on macOS")
 class TestLiveWhisperService(unittest.TestCase):
     def setUp(self):
+        # The Flask conftest may import this service before this test module.
+        # Patch the names used by that cached module, and keep MLX mocks alive
+        # for the deferred imports in the constructor and transcription method.
+        mock_translation_service.reset_mock()
+        mock_mlx_whisper.reset_mock()
+        modules = patch.dict(sys.modules, {
+            'mlx': mock_mlx,
+            'mlx.core': mock_mlx.core,
+            'mlx_whisper': mock_mlx_whisper,
+            'mlx_whisper.load_models': mock_mlx_whisper.load_models,
+            'mlx_whisper.decoding': mock_mlx_whisper.decoding,
+            'mlx_whisper.audio': mock_mlx_whisper.audio,
+        })
+        modules.start()
+        self.addCleanup(modules.stop)
+        for name, replacement in [
+            ('get_whisper_model', mock_whisper_service.get_whisper_model),
+            ('await_translate_subtitles', mock_translation_service.await_translate_subtitles),
+        ]:
+            mocked = patch('backend.services.live_whisper_service.' + name, replacement)
+            mocked.start()
+            self.addCleanup(mocked.stop)
         self.mock_socketio = MagicMock()
         self.sid = "test_sid"
         self.target_lang = "es"

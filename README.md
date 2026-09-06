@@ -16,6 +16,10 @@
   <img src="https://img.shields.io/badge/tests-262%20passing-brightgreen.svg" alt="Tests">
 </p>
 
+<p align="center">
+  <a href="http://subtide.docs.renner.dev/">Documentation</a>
+</p>
+
 ---
 
 ## Features
@@ -35,7 +39,8 @@
 - **Generic Sites** — Works on any site with `<video>` elements
 
 ### User Experience
-- **Modern UI** — Clean dark theme with teal accents
+- **Light & Dark Popup** — Teal-accented interface that follows your system colour scheme
+- **Localized Interface** — Extension UI translated into 50+ languages
 - **Draggable Subtitles** — Position subtitles anywhere on screen
 - **Adjustable Size** — Small, Medium, Large, and XL subtitle options
 - **Dual Subtitles** — Show original + translated text simultaneously
@@ -316,6 +321,7 @@ subtide/
 │       ├── offscreen/              # Audio capture
 │       └── popup/                  # Extension popup
 │           ├── popup.html
+│           ├── popup.css           # Design tokens, light + dark theme
 │           └── popup.js
 │
 ├── SPECIFICATION.md            # Detailed technical spec

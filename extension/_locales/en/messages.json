@@ -485,5 +485,83 @@
     },
     "shortsTranslating": {
         "message": "Translating..."
+    },
+    "backendApiKey": {
+        "message": "Backend API Key"
+    },
+    "backendApiKeyHint": {
+        "message": "Optional: RunPod API key (RunPod Serverless) or server key"
+    },
+    "liveTranslateHint": {
+        "message": "Capture tab audio for real-time translation"
+    },
+    "toggleValueVisibility": {
+        "message": "Show or hide this value"
+    },
+    "textToSpeech": {
+        "message": "Text-to-Speech"
+    },
+    "ttsEnable": {
+        "message": "Enable Text-to-Speech"
+    },
+    "ttsEnableHint": {
+        "message": "Read translated subtitles aloud"
+    },
+    "ttsSource": {
+        "message": "Voice Source"
+    },
+    "ttsSourceAuto": {
+        "message": "Automatic (backend if available)"
+    },
+    "ttsSourceBackend": {
+        "message": "Backend only"
+    },
+    "ttsSourceBrowser": {
+        "message": "Browser only"
+    },
+    "ttsSourceHint": {
+        "message": "The backend offers higher-quality voices; the browser works offline."
+    },
+    "ttsRate": {
+        "message": "Speech Rate"
+    },
+    "ttsVolume": {
+        "message": "Speech Volume"
+    },
+    "queueTitle": {
+        "message": "Translation Queue"
+    },
+    "queueClearCompleted": {
+        "message": "Clear Finished"
+    },
+    "queueEmpty": {
+        "message": "No videos in the queue"
+    },
+    "queueRemoveItem": {
+        "message": "Remove from queue"
+    },
+    "queuePendingCount": {
+        "message": "$COUNT$ pending",
+        "placeholders": {
+            "count": {
+                "content": "$1"
+            }
+        }
+    },
+    "queueProcessingCount": {
+        "message": "$COUNT$ processing",
+        "placeholders": {
+            "count": {
+                "content": "$1"
+            }
+        }
+    },
+    "queueCompletedCount": {
+        "message": "$COUNT$ done",
+        "placeholders": {
+            "count": {
+                "content": "$1"
+            }
+        }
     }
 }

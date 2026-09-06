@@ -476,5 +476,83 @@
     },
     "btnStartLiveTranslate": {
         "message": "Live-Übersetzung starten"
+    },
+    "backendApiKey": {
+        "message": "Backend-API-Schlüssel"
+    },
+    "backendApiKeyHint": {
+        "message": "Optional: RunPod-API-Schlüssel (RunPod Serverless) oder Server-Schlüssel"
+    },
+    "liveTranslateHint": {
+        "message": "Tab-Audio für Echtzeit-Übersetzung aufnehmen"
+    },
+    "toggleValueVisibility": {
+        "message": "Wert anzeigen oder ausblenden"
+    },
+    "textToSpeech": {
+        "message": "Sprachausgabe"
+    },
+    "ttsEnable": {
+        "message": "Sprachausgabe aktivieren"
+    },
+    "ttsEnableHint": {
+        "message": "Übersetzte Untertitel vorlesen"
+    },
+    "ttsSource": {
+        "message": "Stimmquelle"
+    },
+    "ttsSourceAuto": {
+        "message": "Automatisch (Backend, falls verfügbar)"
+    },
+    "ttsSourceBackend": {
+        "message": "Nur Backend"
+    },
+    "ttsSourceBrowser": {
+        "message": "Nur Browser"
+    },
+    "ttsSourceHint": {
+        "message": "Das Backend bietet Stimmen in höherer Qualität; der Browser funktioniert offline."
+    },
+    "ttsRate": {
+        "message": "Sprechgeschwindigkeit"
+    },
+    "ttsVolume": {
+        "message": "Sprachlautstärke"
+    },
+    "queueTitle": {
+        "message": "Übersetzungs-Warteschlange"
+    },
+    "queueClearCompleted": {
+        "message": "Fertige entfernen"
+    },
+    "queueEmpty": {
+        "message": "Keine Videos in der Warteschlange"
+    },
+    "queueRemoveItem": {
+        "message": "Aus der Warteschlange entfernen"
+    },
+    "queuePendingCount": {
+        "message": "$COUNT$ ausstehend",
+        "placeholders": {
+            "count": {
+                "content": "$1"
+            }
+        }
+    },
+    "queueProcessingCount": {
+        "message": "$COUNT$ in Arbeit",
+        "placeholders": {
+            "count": {
+                "content": "$1"
+            }
+        }
+    },
+    "queueCompletedCount": {
+        "message": "$COUNT$ fertig",
+        "placeholders": {
+            "count": {
+                "content": "$1"
+            }
+        }
     }
 }
